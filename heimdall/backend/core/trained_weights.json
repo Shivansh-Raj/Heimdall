@@ -1,0 +1,39 @@
+{
+  "heart": {
+    "weights": [
+      1.19997575,
+      0.37794842,
+      1.11480901,
+      -0.01294015
+    ],
+    "bias": -1.1572428,
+    "feature_names": [
+      "age",
+      "chol",
+      "trestbps",
+      "fbs"
+    ],
+    "feature_mins": [
+      1,
+      100,
+      80,
+      0
+    ],
+    "feature_maxs": [
+      120,
+      600,
+      250,
+      1
+    ],
+    "metrics": {
+      "accuracy": 0.5667,
+      "precision": 0.625,
+      "recall": 0.1786,
+      "f1": 0.2778,
+      "auc": 0.6574,
+      "cv_mean": 0.542,
+      "cv_std": 0.072,
+      "n_samples": 297
+    }
+  }
+}
