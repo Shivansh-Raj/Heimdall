@@ -43,10 +43,27 @@ export function usePaillier() {
     if (!pk) throw new Error('Keys not generated yet.');
 
     const t0 = performance.now();
-    const normValues = rawValues.map((v, i) =>
-      normalizeFeature(v, modelFeatures[i].min, modelFeatures[i].max)
-    );
-    const encryptedFeatures = encryptVector(normValues, pk);
+
+    // Step 1 — normalize using clinical ranges (MUST match backend mins/maxs)
+    const normValues = rawValues.map((v, i) => {
+      const min = modelFeatures[i].min;
+      const max = modelFeatures[i].max;
+      return Math.max(0, Math.min(1, (v - min) / (max - min)));
+    });
+
+    console.log('raw values:  ', rawValues);
+    console.log('norm values: ', normValues);   // <-- open browser console to verify
+
+    // Step 2 — encrypt normalized values scaled by 1e6
+    const encryptedFeatures = normValues.map(v => {
+      const scaled = BigInt(Math.round(v * 1_000_000));
+      const ciphertext = pk.encrypt(scaled);
+      return {
+        ciphertext: ciphertext.toString(),
+        exponent: -6,
+      };
+    });
+
     const encTimeMs = +(performance.now() - t0).toFixed(2);
     return { encryptedFeatures, normValues, encTimeMs };
   }, [keyState.publicKey]);
@@ -58,10 +75,14 @@ export function usePaillier() {
   const decryptAndInterpret = useCallback((encResult, privateKey) => {
     const pk = privateKey || keyState.privateKey;
     if (!pk) throw new Error('Private key not available.');
+    // ------------------
+    // console.log('=== DECRYPT RESULT ===', { encResult });
 
     const score = decryptResult(encResult, pk);
     const probability = sigmoid(score);
     const risk = probability > 0.5 ? 'HIGH' : 'LOW';
+
+    console.log('=== DECRYPT RESULT ===', { score, probability, risk });
     return { score, probability, risk };
   }, [keyState.privateKey]);
 

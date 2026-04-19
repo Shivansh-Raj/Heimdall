@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import KeyPanel    from '../components/KeyPanel';
-import Pipeline   from '../components/Pipeline';
+import KeyPanel from '../components/KeyPanel';
+import Pipeline from '../components/Pipeline';
 import ResultPanel from '../components/ResultPanel';
-import MetricsBar  from '../components/MetricsBar';
-import AuditLog    from '../components/AuditLog';
+import MetricsBar from '../components/MetricsBar';
+import AuditLog from '../components/AuditLog';
 import { usePaillier } from '../hooks/usePaillier';
 import { fetchModels, predict } from '../utils/api';
 import styles from './DiagnosisPage.module.css';
 
 const INITIAL_STEPS = {
-  validate:  { status: '', detail: 'Waiting for input...', time: null },
-  normalize: { status: '', detail: 'Awaiting step 1...',   time: null },
-  encrypt:   { status: '', detail: 'Awaiting step 2...',   time: null },
-  infer:     { status: '', detail: 'Awaiting step 3...',   time: null },
-  decrypt:   { status: '', detail: 'Awaiting step 4...',   time: null },
+  validate: { status: '', detail: 'Waiting for input...', time: null },
+  normalize: { status: '', detail: 'Awaiting step 1...', time: null },
+  encrypt: { status: '', detail: 'Awaiting step 2...', time: null },
+  infer: { status: '', detail: 'Awaiting step 3...', time: null },
+  decrypt: { status: '', detail: 'Awaiting step 4...', time: null },
 };
 
 function now() {
@@ -21,14 +21,14 @@ function now() {
 }
 
 export default function DiagnosisPage() {
-  const [models, setModels]         = useState({});
+  const [models, setModels] = useState({});
   const [activeModel, setActiveModel] = useState('diabetes');
   const [fieldValues, setFieldValues] = useState({});
-  const [steps, setSteps]           = useState(INITIAL_STEPS);
-  const [result, setResult]         = useState(null);
-  const [metrics, setMetrics]       = useState({ keyBits: 2048 });
-  const [log, setLog]               = useState([]);
-  const [running, setRunning]       = useState(false);
+  const [steps, setSteps] = useState(INITIAL_STEPS);
+  const [result, setResult] = useState(null);
+  const [metrics, setMetrics] = useState({ keyBits: 2048 });
+  const [log, setLog] = useState([]);
+  const [running, setRunning] = useState(false);
   const [serverOnline, setServerOnline] = useState(null);
 
   const { keyState, genKeys, encryptFeatures, decryptAndInterpret } = usePaillier();
@@ -64,7 +64,7 @@ export default function DiagnosisPage() {
     genKeys()
       .then(() => addLog('Key pair generated — private key stored in memory only', 'success'))
       .catch(e => addLog('Key generation failed: ' + e.message, 'error'));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const currentModel = models[activeModel];
@@ -81,7 +81,7 @@ export default function DiagnosisPage() {
   async function runPipeline() {
     if (running) return;
     if (!keyState.generated) { addLog('Keys not ready — please wait', 'warn'); return; }
-    if (!serverOnline)       { addLog('API server is offline', 'error'); return; }
+    if (!serverOnline) { addLog('API server is offline', 'error'); return; }
 
     // Validate inputs
     const rawValues = features.map(f => parseFloat(fieldValues[f.id] ?? ''));
@@ -145,6 +145,7 @@ export default function DiagnosisPage() {
       setStep('decrypt', 'active', 'Decrypting with private key (client-side only)...');
       await sleep(100);
       const { score, probability, risk } = decryptAndInterpret(encrypted_result, keyState.privateKey);
+      console.log('=== DECRYPT RESULT ===', { score, probability, risk });
       const totalMs = +(performance.now() - t0).toFixed(1);
       setStep('decrypt', 'done',
         `score=${score.toFixed(4)} → P(disease)=${(probability * 100).toFixed(1)}% → ${risk}`,
@@ -177,7 +178,7 @@ export default function DiagnosisPage() {
         <div className={styles.logo}>HEIMDALL</div>
         <div className={styles.tagline}>Privacy-Preserving Medical Diagnosis · Paillier HE</div>
         <div className={styles.statusBar}>
-          <StatusPill active={keyState.generated}   label={keyState.generating ? 'Keys: Generating...' : 'Keys: Ready'} />
+          <StatusPill active={keyState.generated} label={keyState.generating ? 'Keys: Generating...' : 'Keys: Ready'} />
           <StatusPill active={serverOnline === true} label={serverOnline === null ? 'Server: Checking...' : serverOnline ? 'Server: Online' : 'Server: Offline'} danger={serverOnline === false} />
           <StatusPill active label="TLS: Active" />
           <StatusPill active label="PHI: Encrypted" />
@@ -252,8 +253,8 @@ function StatusPill({ active, label, danger }) {
   return (
     <div className={[
       styles.pill,
-      active  ? styles.pillActive  : '',
-      danger  ? styles.pillDanger  : '',
+      active ? styles.pillActive : '',
+      danger ? styles.pillDanger : '',
     ].join(' ')}>
       <span className={styles.dot} />
       {label}

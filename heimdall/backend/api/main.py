@@ -18,6 +18,9 @@ from core.models import (
     sigmoid,
     MODEL_SPECS,
 )
+from core.models import TRAINED_WEIGHTS
+print("Loaded weights:", {k: v['weights'] for k, v in TRAINED_WEIGHTS.items()})
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("heimdall")

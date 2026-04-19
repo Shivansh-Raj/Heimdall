@@ -11,7 +11,7 @@
  *   - Server sees:    public key n, encrypted ciphertexts, encrypted result
  */
 
-import * as paillierBigint from 'node-paillier-bigint';
+import * as paillierBigint from 'paillier-bigint';
 
 let _publicKey = null;
 let _privateKey = null;
@@ -41,16 +41,18 @@ export async function generateKeyPair(bits = 2048) {
  */
 export function encryptValue(value, publicKey) {
   const pk = publicKey || _publicKey;
-  if (!pk) throw new Error('No public key available. Call generateKeyPair() first.');
+  if (!pk) throw new Error('No public key. Call generateKeyPair() first.');
 
-  // Scale to integer: multiply by 2^32 to preserve precision
-  const SCALE = BigInt(2 ** 32);
-  const scaled = BigInt(Math.round(value * Number(SCALE)));
+  // phe (Python) uses integer plaintexts internally.
+  // We multiply by 1e6 to preserve 6 decimal places of precision,
+  // then the exponent tells the server the scaling factor.
+  const SCALE = 1_000_000;
+  const scaled = BigInt(Math.round(value * SCALE));
 
   const ciphertext = pk.encrypt(scaled);
   return {
     ciphertext: ciphertext.toString(),
-    exponent: -32,   // tells server the scaling factor (2^32 = 2^(-exponent))
+    exponent: -6,    // matches 1e6 scaling — phe reads this as value * 10^(-6) = original float
   };
 }
 
@@ -70,15 +72,30 @@ export function encryptVector(values, publicKey) {
  */
 export function decryptResult(encResult, privateKey) {
   const pk = privateKey || _privateKey;
-  if (!pk) throw new Error('No private key available.');
+  if (!pk) throw new Error('No private key.');
 
+  // node-paillier-bigint's decrypt() returns a plaintext BigInt
+  // BUT the library expects the ciphertext as a BigInt input
   const cipherBigInt = BigInt(encResult.ciphertext);
-  const decrypted = pk.decrypt(cipherBigInt);
+  const decrypted = pk.decrypt(cipherBigInt);  // returns BigInt
 
-  // Undo the scaling applied during encryption
-  // The exponent field from the server tells us the total scaling
-  const scale = Math.pow(2, -encResult.exponent);
-  return Number(decrypted) / scale;
+  console.log('raw decrypted BigInt:', decrypted.toString().slice(0, 40));
+  console.log('type:', typeof decrypted);
+
+  // Convert using string to avoid overflow — parse as float directly
+  const str = decrypted.toString();
+  const isNegative = str.startsWith('-');
+  const absStr = isNegative ? str.slice(1) : str;
+
+  // Insert decimal point 6 places from the right (undo 1e6 scaling)
+  const padded = absStr.padStart(7, '0');  // ensure at least 7 digits
+  const intPart = padded.slice(0, -6) || '0';
+  const fracPart = padded.slice(-6);
+  const floatStr = `${isNegative ? '-' : ''}${intPart}.${fracPart}`;
+  const result = parseFloat(floatStr);
+
+  console.log('=== decryptResult ===', { str, floatStr, result });
+  return result;
 }
 
 /**
@@ -95,3 +112,5 @@ export function normalizeFeature(value, min, max) {
 export function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
+
+

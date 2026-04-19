@@ -41,11 +41,11 @@ _FALLBACK_WEIGHTS = {
         "feature_maxs":  [120, 600, 250, 1],
     },
     "anemia": {
-        "weights":       [0.5, 0.3, 0.01, 0.02],
-        "bias":          -8.0,
-        "feature_names": ["hgb", "rbc", "mcv", "mch"],
-        "feature_mins":  [4,  1,  50, 15],
-        "feature_maxs":  [20, 8, 120, 40],
+        "weights":      [0.5, 0.02, 0.01, 0.01],
+        "bias":         -8.0,
+        "feature_names":["hemoglobin", "mch", "mchc", "mcv"],
+        "feature_mins": [4,  15, 20,  50],
+        "feature_maxs": [20, 40, 40, 120],
     },
 }
 
@@ -64,22 +64,22 @@ MODEL_SPECS = {
     },
     "heart": {
         "label":    "Heart Disease",
-        "accuracy": 83.6,
+        "accuracy": 80.0,
         "features": [
-            {"id": "age",     "label": "Age (years)",            "min": 1,   "max": 120, "hint": ""},
-            {"id": "chol",    "label": "Cholesterol (mg/dL)",   "min": 100, "max": 600, "hint": "Normal: <200"},
-            {"id": "sbp",     "label": "Systolic BP (mmHg)",    "min": 80,  "max": 250, "hint": "Normal: <120"},
-            {"id": "smoking", "label": "Smoking (0=No, 1=Yes)", "min": 0,   "max": 1,   "hint": ""},
+            {"id": "age",      "label": "Age (years)",               "min": 1,   "max": 120, "hint": ""},
+            {"id": "thalach",  "label": "Max Heart Rate (bpm)",      "min": 60,  "max": 220, "hint": "Normal: 100-170 during exercise"},
+            {"id": "trestbps", "label": "Resting Systolic BP (mmHg)","min": 80,  "max": 250, "hint": "Normal: <120"},
+            {"id": "cp",       "label": "Chest Pain Type (0-3)",     "min": 0,   "max": 3,   "hint": "0=typical angina, 3=asymptomatic"},
         ],
     },
     "anemia": {
         "label":    "Anemia",
         "accuracy": 89.4,
         "features": [
-            {"id": "hgb", "label": "Hemoglobin (g/dL)",  "min": 4,  "max": 20,  "hint": "Normal: 12-17.5"},
-            {"id": "rbc", "label": "RBC Count (M/μL)",   "min": 1,  "max": 8,   "hint": "Normal: 4.5-5.5"},
-            {"id": "mcv", "label": "MCV (fL)",            "min": 50, "max": 120, "hint": "Normal: 80-100"},
-            {"id": "mch", "label": "MCH (pg)",            "min": 15, "max": 40,  "hint": "Normal: 27-33"},
+            {"id": "hgb",  "label": "Hemoglobin (g/dL)", "min": 4,  "max": 20,  "hint": "Normal: 12-17.5"},
+            {"id": "mch",  "label": "MCH (pg)",           "min": 15, "max": 40,  "hint": "Normal: 27-33"},
+            {"id": "mchc", "label": "MCHC (g/dL)",        "min": 20, "max": 40,  "hint": "Normal: 31.5-35.7"},
+            {"id": "mcv",  "label": "MCV (fL)",            "min": 50, "max": 120, "hint": "Normal: 80-100"},
         ],
     },
 }

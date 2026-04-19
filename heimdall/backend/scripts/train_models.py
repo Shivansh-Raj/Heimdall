@@ -66,7 +66,7 @@ def train_diabetes():
     #     df[col].fillna(df[col].median(), inplace=True)
     for col in ['Glucose', 'BloodPressure', 'BMI', 'Age']:
         df[col] = df[col].replace(0, np.nan)
-        df[col].fillna(df[col].median(), inplace=True)
+        df[col] = df[col].fillna(df[col].median())
 
     # Select the 4 features that match the Heimdall UI fields
     features = ['Glucose', 'BMI', 'Age', 'BloodPressure']
@@ -106,13 +106,14 @@ def train_heart():
     df['target'] = (df['target'] > 0).astype(int)
 
     # 'fbs' (fasting blood sugar > 120) serves as smoking proxy in our UI
-    features = ['age', 'chol', 'trestbps', 'fbs']
-    X = df[features].values
-    y = df['target'].values
+    features = ['age', 'thalach', 'trestbps', 'cp']
+    X = df[features].values.astype(float)
+    y = df['target'].values.astype(int)
 
     return _fit_and_report('heart', features, X, y,
-                           feature_mins=[1,  100, 80, 0],
-                           feature_maxs=[120, 600, 250, 1])
+        feature_mins=[1,   60,  80, 0],
+        feature_maxs=[120, 220, 250, 3]
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -137,11 +138,11 @@ def train_anemia():
 
     # Try common column name variants
     col_map = {
-        'hemoglobin':  ['hemoglobin', 'hgb', 'hb'],
-        'rbc':         ['rbc', 'red_blood_cells', 'red_cell_count'],
-        'mcv':         ['mcv', 'mean_corpuscular_volume'],
-        'mch':         ['mch', 'mean_corpuscular_hemoglobin'],
-        'target':      ['result', 'anemia', 'target', 'label', 'class'],
+        'hemoglobin': ['hemoglobin', 'hgb', 'hb'],
+        'mch':        ['mch', 'mean_corpuscular_hemoglobin'],
+        'mchc':       ['mchc', 'mean_corpuscular_hemoglobin_concentration'],
+        'mcv':        ['mcv', 'mean_corpuscular_volume'],
+        'target':     ['target', 'result', 'anemia', 'label', 'class'],
     }
 
     rename = {}
@@ -153,7 +154,7 @@ def train_anemia():
 
     df.rename(columns=rename, inplace=True)
 
-    required = ['hemoglobin', 'rbc', 'mcv', 'mch', 'target']
+    required = ['hemoglobin', 'mch', 'mchc', 'mcv', 'target']
     missing = [c for c in required if c not in df.columns]
     if missing:
         print(f"\n  Available columns: {list(df.columns)}")
@@ -171,13 +172,13 @@ def train_anemia():
              'anemic': 1, 'non-anemic': 0, '1': 1, '0': 0}
         )
 
-    features = ['hemoglobin', 'rbc', 'mcv', 'mch']
+    features = ['hemoglobin', 'mch', 'mchc', 'mcv']
     X = df[features].values.astype(float)
     y = df['target'].values.astype(int)
 
     return _fit_and_report('anemia', features, X, y,
-                           feature_mins=[4,  1,  50, 15],
-                           feature_maxs=[20, 8, 120, 40])
+                       feature_mins=[4,  15, 20,  50],
+                       feature_maxs=[20, 40, 40, 120])
 
 
 # ══════════════════════════════════════════════════════════════════════════

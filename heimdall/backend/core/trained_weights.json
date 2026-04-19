@@ -1,39 +1,113 @@
 {
+  "diabetes": {
+    "weights": [
+      5.62719061,
+      3.24384592,
+      2.05500451,
+      0.70003904
+    ],
+    "bias": -5.15755256,
+    "feature_names": [
+      "Glucose",
+      "BMI",
+      "Age",
+      "BloodPressure"
+    ],
+    "feature_mins": [
+      0,
+      10,
+      1,
+      40
+    ],
+    "feature_maxs": [
+      300,
+      60,
+      120,
+      200
+    ],
+    "metrics": {
+      "accuracy": 0.7273,
+      "precision": 0.6579,
+      "recall": 0.463,
+      "f1": 0.5435,
+      "auc": 0.7793,
+      "cv_mean": 0.7526,
+      "cv_std": 0.0174,
+      "n_samples": 768
+    }
+  },
   "heart": {
     "weights": [
-      1.19997575,
-      0.37794842,
-      1.11480901,
-      -0.01294015
+      0.80538431,
+      -2.61651045,
+      1.15827169,
+      1.29699297
     ],
-    "bias": -1.1572428,
+    "bias": -0.58955574,
     "feature_names": [
       "age",
-      "chol",
+      "thalach",
       "trestbps",
-      "fbs"
+      "cp"
     ],
     "feature_mins": [
       1,
-      100,
+      60,
       80,
       0
     ],
     "feature_maxs": [
       120,
-      600,
+      220,
       250,
-      1
+      3
     ],
     "metrics": {
-      "accuracy": 0.5667,
-      "precision": 0.625,
-      "recall": 0.1786,
-      "f1": 0.2778,
-      "auc": 0.6574,
-      "cv_mean": 0.542,
-      "cv_std": 0.072,
+      "accuracy": 0.8167,
+      "precision": 0.9048,
+      "recall": 0.6786,
+      "f1": 0.7755,
+      "auc": 0.8772,
+      "cv_mean": 0.714,
+      "cv_std": 0.0402,
       "n_samples": 297
+    }
+  },
+  "anemia": {
+    "weights": [
+      -13.83979642,
+      -0.1994428,
+      0.72302452,
+      -0.7606542
+    ],
+    "bias": 7.81409281,
+    "feature_names": [
+      "hemoglobin",
+      "mch",
+      "mchc",
+      "mcv"
+    ],
+    "feature_mins": [
+      4,
+      15,
+      20,
+      50
+    ],
+    "feature_maxs": [
+      20,
+      40,
+      40,
+      120
+    ],
+    "metrics": {
+      "accuracy": 0.9018,
+      "precision": 0.8636,
+      "recall": 0.9194,
+      "f1": 0.8906,
+      "auc": 0.975,
+      "cv_mean": 0.8916,
+      "cv_std": 0.0238,
+      "n_samples": 1421
     }
   }
 }

@@ -54,10 +54,9 @@ def decrypt_value(private_key: paillier.PaillierPrivateKey, enc_dict: dict) -> f
     return private_key.decrypt(enc_number)
 
 
-def reconstruct_encrypted_number(public_key: paillier.PaillierPublicKey, enc_dict: dict) -> paillier.EncryptedNumber:
-    """Reconstruct an EncryptedNumber from a serialized dict."""
+def reconstruct_encrypted_number(public_key, enc_dict: dict):
     return paillier.EncryptedNumber(
         public_key,
         int(enc_dict["ciphertext"]),
-        int(enc_dict["exponent"])
+        int(enc_dict["exponent"])  
     )
