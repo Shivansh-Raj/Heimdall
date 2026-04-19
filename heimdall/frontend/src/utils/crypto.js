@@ -1,116 +1,243 @@
-/**
- * Heimdall - Client-Side Paillier Encryption Utility
- *
- * Uses node-paillier-bigint for real cryptographic operations in the browser.
- * The private key NEVER leaves this module — it is never sent to the server.
- *
- * Security model:
- *   - Key generation: client only
- *   - Encryption:     client only (using public key)
- *   - Decryption:     client only (using private key)
- *   - Server sees:    public key n, encrypted ciphertexts, encrypted result
- */
+// ── Math helpers ──────────────────────────────────────────────────────────
 
-import * as paillierBigint from 'paillier-bigint';
+function modPow(base, exp, mod) {
+  let result = 1n;
+  base = base % mod;
+  while (exp > 0n) {
+    if (exp % 2n === 1n) result = result * base % mod;
+    exp = exp / 2n;
+    base = base * base % mod;
+  }
+  return result;
+}
+
+function millerRabin(n, rounds = 12) {
+  if (n < 2n) return false;
+  if (n === 2n || n === 3n) return true;
+  if (n % 2n === 0n) return false;
+  let d = n - 1n, r = 0n;
+  while (d % 2n === 0n) { d /= 2n; r++; }
+  const witnesses = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n];
+  for (const a of witnesses) {
+    if (a >= n) continue;
+    let x = modPow(a, d, n);
+    if (x === 1n || x === n - 1n) continue;
+    let composite = true;
+    for (let j = 0n; j < r - 1n; j++) {
+      x = x * x % n;
+      if (x === n - 1n) { composite = false; break; }
+    }
+    if (composite) return false;
+  }
+  return true;
+}
+
+function randomBigInt(bits) {
+  const bytes = Math.ceil(bits / 8);
+  const arr = new Uint8Array(bytes);
+  window.crypto.getRandomValues(arr);
+  arr[0] |= 0x80;
+  return BigInt('0x' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join(''));
+}
+
+async function generatePrime(bits) {
+  while (true) {
+    let p = randomBigInt(bits);
+    if (p % 2n === 0n) p += 1n;
+    if (millerRabin(p)) return p;
+    await new Promise(r => setTimeout(r, 0)); // don't block UI
+  }
+}
+
+function gcd(a, b) {
+  while (b) { [a, b] = [b, a % b]; }
+  return a;
+}
+
+function lcm(a, b) { return (a / gcd(a, b)) * b; }
+
+function modInverse(a, m) {
+  let [old_r, r] = [a, m];
+  let [old_s, s] = [1n, 0n];
+  while (r !== 0n) {
+    const q = old_r / r;
+    [old_r, r] = [r, old_r - q * r];
+    [old_s, s] = [s, old_s - q * s];
+  }
+  return ((old_s % m) + m) % m;
+}
+
+function L(x, n) { return (x - 1n) / n; }
+
+// ── Key storage ───────────────────────────────────────────────────────────
 
 let _publicKey = null;
 let _privateKey = null;
 
-/**
- * Generate a fresh Paillier key pair (2048-bit).
- * Stores keys in module scope — never in localStorage or sent over network.
- */
+// ── Key generation ────────────────────────────────────────────────────────
+
 export async function generateKeyPair(bits = 2048) {
-  const { publicKey, privateKey } = await paillierBigint.generateRandomKeys(bits);
-  _publicKey = publicKey;
-  _privateKey = privateKey;
+  const half = bits / 2;
+  let p, q, n;
+  do {
+    p = await generatePrime(half);
+    q = await generatePrime(half);
+    n = p * q;
+  } while (p === q);
+
+  const n2 = n * n;
+  const g = n + 1n;                        // standard simplification
+  const lambda = lcm(p - 1n, q - 1n);
+  const mu = modInverse(L(modPow(g, lambda, n2), n), n);
+
+  _publicKey = { n, n2, g };
+  _privateKey = { lambda, mu, publicKey: _publicKey };
+
   return {
-    n: publicKey.n.toString(),          // safe to share with server
-    publicKey,
-    privateKey,
+    publicKey: _publicKey,
+    privateKey: _privateKey,
+    n: n.toString(),
   };
 }
 
-/**
- * Encrypt a normalized float value.
- * Paillier works on integers, so we scale by 1e6 before encrypting.
- *
- * @param {number} value - Float in range [0, 1] (normalized)
- * @param {object} publicKey - Paillier public key object
- * @returns {{ ciphertext: string, exponent: number }}
- */
+// ── Encryption ────────────────────────────────────────────────────────────
+
 export function encryptValue(value, publicKey) {
   const pk = publicKey || _publicKey;
   if (!pk) throw new Error('No public key. Call generateKeyPair() first.');
 
-  // phe (Python) uses integer plaintexts internally.
-  // We multiply by 1e6 to preserve 6 decimal places of precision,
-  // then the exponent tells the server the scaling factor.
-  const SCALE = 1_000_000;
-  const scaled = BigInt(Math.round(value * SCALE));
+  const { n, n2 } = pk;
 
-  const ciphertext = pk.encrypt(scaled);
+  // Scale float to integer — multiply by 1e6 to preserve 6 decimal places
+  const scaled = BigInt(Math.round(value * 1_000_000));
+
+  // Handle negatives: work in [0, n)
+  const m = ((scaled % n) + n) % n;
+
+  // Paillier encrypt: c = g^m * r^n mod n^2
+  // Since g = n+1: g^m mod n^2 = (1 + m*n) mod n^2
+  const gm = (1n + m * n) % n2;
+
+  let r;
+  const bits = n.toString(2).length;
+  do { r = randomBigInt(bits) % n; } while (r === 0n);
+
+  const rn = modPow(r, n, n2);
+  const ciphertext = gm * rn % n2;
+
   return {
     ciphertext: ciphertext.toString(),
-    exponent: -6,    // matches 1e6 scaling — phe reads this as value * 10^(-6) = original float
+    exponent: -6,
   };
 }
 
-/**
- * Encrypt a vector of normalized floats.
- */
 export function encryptVector(values, publicKey) {
   return values.map(v => encryptValue(v, publicKey));
 }
 
-/**
- * Decrypt a ciphertext returned by the server.
- *
- * @param {{ ciphertext: string, exponent: number }} encResult
- * @param {object} privateKey - Paillier private key object
- * @returns {number} - Decrypted float
- */
+// ── Decryption ────────────────────────────────────────────────────────────
+
 export function decryptResult(encResult, privateKey) {
   const pk = privateKey || _privateKey;
   if (!pk) throw new Error('No private key.');
 
-  // node-paillier-bigint's decrypt() returns a plaintext BigInt
-  // BUT the library expects the ciphertext as a BigInt input
-  const cipherBigInt = BigInt(encResult.ciphertext);
-  const decrypted = pk.decrypt(cipherBigInt);  // returns BigInt
+  const { lambda, mu, publicKey: { n, n2 } } = pk;
+  const c = BigInt(encResult.ciphertext);
 
-  console.log('raw decrypted BigInt:', decrypted.toString().slice(0, 40));
-  console.log('type:', typeof decrypted);
+  // Standard Paillier decrypt
+  const cl = modPow(c, lambda, n2);
+  const lval = L(cl, n);
+  const m = lval * mu % n;
 
-  // Convert using string to avoid overflow — parse as float directly
-  const str = decrypted.toString();
-  const isNegative = str.startsWith('-');
-  const absStr = isNegative ? str.slice(1) : str;
+  // Handle negative numbers
+  const signed = m > n / 2n ? m - n : m;
 
-  // Insert decimal point 6 places from the right (undo 1e6 scaling)
-  const padded = absStr.padStart(7, '0');  // ensure at least 7 digits
-  const intPart = padded.slice(0, -6) || '0';
-  const fracPart = padded.slice(-6);
-  const floatStr = `${isNegative ? '-' : ''}${intPart}.${fracPart}`;
-  const result = parseFloat(floatStr);
+  // The exponent comes from Python phe — it tells us the scaling factor
+  // phe uses base 10: actual_value = signed * 10^exponent
+  const exponent = encResult.exponent;  // e.g. -6, -15, -32 etc.
 
-  console.log('=== decryptResult ===', { str, floatStr, result });
-  return result;
+  console.log('[decrypt] signed:', signed.toString(), 'exponent:', exponent);
+
+  if (exponent >= 0) {
+    // positive exponent: multiply
+    const scale = BigInt(10) ** BigInt(exponent);
+    return Number(signed * scale);
+  } else {
+    // negative exponent: divide — use string method to avoid overflow
+    const absExp = -exponent;
+    const divisor = BigInt(10) ** BigInt(absExp);
+
+    const intPart = signed / divisor;
+    const rem = signed % divisor;
+
+    // Convert remainder to decimal string, pad to absExp digits
+    const remStr = (rem < 0n ? -rem : rem).toString().padStart(absExp, '0');
+    const sign = signed < 0n ? '-' : '';
+    const floatStr = `${sign}${intPart < 0n ? -intPart : intPart}.${remStr}`;
+
+    const result = parseFloat(floatStr);
+    console.log('[decrypt] floatStr:', floatStr, '→', result);
+    return result;
+  }
 }
 
-/**
- * Min-max normalize a raw feature value using model-specific ranges.
- */
+// ── Helpers ───────────────────────────────────────────────────────────────
+
 export function normalizeFeature(value, min, max) {
-  const norm = (value - min) / (max - min);
-  return Math.max(0, Math.min(1, norm));
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
-/**
- * Sigmoid function to convert logit score → probability.
- */
 export function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
 
+// Testing 
+// // SELF TEST — delete after confirming
+// async function selfTest() {
+//   console.log('[selfTest] Starting...');
+//   const { publicKey, privateKey } = await generateKeyPair(512);
+//   const tests = [0.2833, 0.5, 0.9999];
+//   for (const v of tests) {
+//     const enc = encryptValue(v, publicKey);
+//     const dec = decryptResult(enc, privateKey);
+//     const ok = Math.abs(dec - v) < 0.000002;
+//     console.log(`[selfTest] ${v} → ${dec}  ${ok ? '✓' : '✗ FAIL'}`);
+//   }
+//   console.log('[selfTest] Done.');
+// }
+// selfTest();
 
+// async function crossLibTest() {
+//   console.log('[crossLibTest] Starting...');
+//   const { publicKey, privateKey, n } = await generateKeyPair(512);
+
+//   // Encrypt a known value
+//   const testVal = 0.2833;
+//   const enc = encryptValue(testVal, publicKey);
+//   console.log('[crossLibTest] Encrypted:', enc.ciphertext.slice(0, 30) + '...');
+//   console.log('[crossLibTest] Exponent:', enc.exponent);
+//   console.log('[crossLibTest] Public key n:', n.slice(0, 30) + '...');
+
+//   // Send to backend directly
+//   const response = await fetch('http://localhost:8000/api/predict', {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify({
+//       model_id: 'diabetes',
+//       public_key: { n },
+//       encrypted_features: [enc, enc, enc, enc],  // same value 4 times
+//     }),
+//   });
+
+//   const data = await response.json();
+//   console.log('[crossLibTest] Server response:', data);
+
+//   if (data.encrypted_result) {
+//     const score = decryptResult(data.encrypted_result, privateKey);
+//     console.log('[crossLibTest] Decrypted score:', score);
+//     console.log('[crossLibTest] Probability:', 1 / (1 + Math.exp(-score)));
+//   } else {
+//     console.log('[crossLibTest] Server error:', data.detail);
+//   }
+// }
+// crossLibTest();

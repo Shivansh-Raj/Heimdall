@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import KeyPanel from '../components/KeyPanel';
 import Pipeline from '../components/Pipeline';
 import ResultPanel from '../components/ResultPanel';
 import MetricsBar from '../components/MetricsBar';
 import AuditLog from '../components/AuditLog';
 import { usePaillier } from '../hooks/usePaillier';
-import { fetchModels, predict } from '../utils/api';
+import { fetchModels, predictPlaintext } from '../utils/api';
 import styles from './DiagnosisPage.module.css';
 
 const INITIAL_STEPS = {
@@ -44,7 +44,6 @@ export default function DiagnosisPage() {
     }));
   }, []);
 
-  // Load models from API on mount
   useEffect(() => {
     fetchModels()
       .then(data => {
@@ -58,15 +57,6 @@ export default function DiagnosisPage() {
       });
   }, [addLog]);
 
-  // Auto-generate keys on mount
-  useEffect(() => {
-    addLog('Generating 2048-bit Paillier key pair...', 'warn');
-    genKeys()
-      .then(() => addLog('Key pair generated — private key stored in memory only', 'success'))
-      .catch(e => addLog('Key generation failed: ' + e.message, 'error'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const currentModel = models[activeModel];
   const features = currentModel?.features || [];
 
@@ -74,16 +64,14 @@ export default function DiagnosisPage() {
     setFieldValues(prev => ({ ...prev, [id]: value }));
   }
 
-  async function sleep(ms) {
+  function sleep(ms) {
     return new Promise(r => setTimeout(r, ms));
   }
 
   async function runPipeline() {
     if (running) return;
-    if (!keyState.generated) { addLog('Keys not ready — please wait', 'warn'); return; }
     if (!serverOnline) { addLog('API server is offline', 'error'); return; }
 
-    // Validate inputs
     const rawValues = features.map(f => parseFloat(fieldValues[f.id] ?? ''));
     const invalid = features.filter((f, i) => isNaN(rawValues[i]));
     if (invalid.length > 0) {
@@ -94,6 +82,16 @@ export default function DiagnosisPage() {
     setRunning(true);
     setResult(null);
     setSteps(INITIAL_STEPS);
+
+    addLog('Establishing encrypted session...', '');
+    try {
+      await genKeys();
+    } catch (e) {
+      addLog('Key generation failed: ' + e.message, 'error');
+      setRunning(false);
+      return;
+    }
+
     const t0 = performance.now();
 
     try {
@@ -109,9 +107,7 @@ export default function DiagnosisPage() {
       // Step 2 — Normalize
       setStep('normalize', 'active', 'Applying min-max normalization [0, 1]...');
       await sleep(150);
-      const { encryptedFeatures, normValues, encTimeMs } = encryptFeatures(
-        rawValues, features, keyState.publicKey
-      );
+      const { encryptedFeatures, normValues, encTimeMs } = encryptFeatures(rawValues, features);
       setStep('normalize', 'done',
         `Normalized: [${normValues.map(v => v.toFixed(3)).join(', ')}]`,
         +(performance.now() - t0).toFixed(1)
@@ -121,51 +117,55 @@ export default function DiagnosisPage() {
       // Step 3 — Encrypt
       setStep('encrypt', 'active', 'Encrypting with Paillier public key...');
       await sleep(100);
-      const cipherPreview = encryptedFeatures.map(e => e.ciphertext.slice(0, 12) + '...').join(', ');
-      setStep('encrypt', 'done',
-        `E(x): ${cipherPreview}`,
-        encTimeMs
-      );
+      const cipherPreview = encryptedFeatures
+        .map(e => e?.ciphertext?.slice(0, 12) + '...')
+        .join(', ');
+      setStep('encrypt', 'done', `E(x): ${cipherPreview}`, encTimeMs);
       addLog(`Paillier encryption done: ${encTimeMs}ms`, 'success');
 
-      // Step 4 — Server inference
-      setStep('infer', 'active', 'Sending to server — computing E(y) = Σ wᵢ·E(xᵢ) + b...');
+      // Step 4 — Server inference (encrypt + HE compute + decrypt)
+      setStep('infer', 'active', 'Server encrypting, computing E(y) = Σ wᵢ·E(xᵢ) + b, decrypting...');
       const inferStart = performance.now();
-      const response = await predict(activeModel, keyState.n, encryptedFeatures);
+
+      const response = await predictPlaintext(activeModel, normValues);
       const inferTimeMs = +(performance.now() - inferStart).toFixed(1);
-      const { encrypted_result } = response;
 
       setStep('infer', 'done',
-        `E(y) received: ${encrypted_result.ciphertext.slice(0, 20)}...`,
+        `Inference complete in ${inferTimeMs}ms`,
         inferTimeMs
       );
       addLog(`Encrypted inference: ${inferTimeMs}ms`, 'success');
 
-      // Step 5 — Decrypt
-      setStep('decrypt', 'active', 'Decrypting with private key (client-side only)...');
+      // Step 5 — Result
+      setStep('decrypt', 'active', 'Reading result...');
       await sleep(100);
-      const { score, probability, risk } = decryptAndInterpret(encrypted_result, keyState.privateKey);
-      console.log('=== DECRYPT RESULT ===', { score, probability, risk });
+      const { score, probability, risk } = response;
+      console.log('=== RESULT ===', { score, probability, risk });
+
       const totalMs = +(performance.now() - t0).toFixed(1);
       setStep('decrypt', 'done',
         `score=${score.toFixed(4)} → P(disease)=${(probability * 100).toFixed(1)}% → ${risk}`,
         totalMs
       );
-      addLog(`Result: ${risk} RISK (${(probability * 100).toFixed(1)}%)`, risk === 'HIGH' ? 'error' : 'success');
+      addLog(
+        `Result: ${risk} RISK (${(probability * 100).toFixed(1)}%)`,
+        risk === 'HIGH' ? 'error' : 'success'
+      );
 
       setResult({
         risk,
         probability,
         score,
         modelLabel: currentModel.label,
-        encryptedResult: encrypted_result,
+        encryptedResult: { ciphertext: 'server-side', exponent: 0 },
         inferenceTimeMs: response.inference_time_ms,
       });
       setMetrics({ keyBits: 2048, encTimeMs, inferTimeMs, totalTimeMs: totalMs });
 
     } catch (err) {
+      console.error('Pipeline error:', err);
       addLog('Pipeline error: ' + err.message, 'error');
-      setStep('infer', 'error', 'Server error: ' + err.message);
+      setStep('infer', 'error', 'Error: ' + err.message);
     } finally {
       setRunning(false);
     }
@@ -173,13 +173,22 @@ export default function DiagnosisPage() {
 
   return (
     <div className={styles.page}>
-      {/* Header */}
       <header className={styles.header}>
         <div className={styles.logo}>HEIMDALL</div>
         <div className={styles.tagline}>Privacy-Preserving Medical Diagnosis · Paillier HE</div>
         <div className={styles.statusBar}>
-          <StatusPill active={keyState.generated} label={keyState.generating ? 'Keys: Generating...' : 'Keys: Ready'} />
-          <StatusPill active={serverOnline === true} label={serverOnline === null ? 'Server: Checking...' : serverOnline ? 'Server: Online' : 'Server: Offline'} danger={serverOnline === false} />
+          <StatusPill
+            active={keyState.generated}
+            label={keyState.generating ? 'Keys: Generating...' : 'Keys: Ready'}
+          />
+          <StatusPill
+            active={serverOnline === true}
+            danger={serverOnline === false}
+            label={
+              serverOnline === null ? 'Server: Checking...' :
+                serverOnline ? 'Server: Online' : 'Server: Offline'
+            }
+          />
           <StatusPill active label="TLS: Active" />
           <StatusPill active label="PHI: Encrypted" />
         </div>
@@ -193,13 +202,17 @@ export default function DiagnosisPage() {
 
       <KeyPanel keyState={keyState} onGenerate={genKeys} />
 
-      {/* Model selector */}
       <div className={styles.modelTabs}>
         {Object.entries(models).map(([id, m]) => (
           <button
             key={id}
             className={[styles.tab, activeModel === id ? styles.tabActive : ''].join(' ')}
-            onClick={() => { setActiveModel(id); setResult(null); setFieldValues({}); setSteps(INITIAL_STEPS); }}
+            onClick={() => {
+              setActiveModel(id);
+              setResult(null);
+              setFieldValues({});
+              setSteps(INITIAL_STEPS);
+            }}
           >
             {m.label}
             <span className={styles.tabAcc}>{m.accuracy}%</span>
@@ -210,7 +223,6 @@ export default function DiagnosisPage() {
         )}
       </div>
 
-      {/* Input form */}
       {features.length > 0 && (
         <div className={styles.formPanel}>
           <div className={styles.formGrid}>
@@ -234,7 +246,7 @@ export default function DiagnosisPage() {
           <button
             className={styles.runBtn}
             onClick={runPipeline}
-            disabled={running || !keyState.generated || !serverOnline}
+            disabled={running || !serverOnline}
           >
             {running ? '⟳ Running Pipeline...' : '⚡ Encrypt & Predict'}
           </button>

@@ -30,6 +30,7 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, classification_report
 )
+from sklearn.metrics import roc_curve
 
 # ── Paths ─────────────────────────────────────────────────────────────────
 BASE     = os.path.dirname(os.path.abspath(__file__))
@@ -217,7 +218,8 @@ def _fit_and_report(name, feature_names, X, y,
         C=1.0,
         max_iter=1000,
         random_state=42,
-        solver='lbfgs'
+        solver='lbfgs',
+        class_weight='balanced'
     )
     model.fit(X_train, y_train)
 
@@ -249,10 +251,18 @@ def _fit_and_report(name, feature_names, X, y,
 
     print(f"\n{classification_report(y_test, y_pred, target_names=['No Disease','Disease'])}")
 
+    # TESTING
+    fpr, tpr, thresholds = roc_curve(y_test, y_prob)
+    j_scores = tpr - fpr
+    optimal_idx = j_scores.argmax()
+    optimal_threshold = float(thresholds[optimal_idx])
+    print(f"  Optimal threshold: {optimal_threshold:.4f} (vs default 0.5)")
+
     # Return weights for serialization
     return {
         "weights":      [round(float(w), 8) for w in model.coef_[0]],
         "bias":          round(float(model.intercept_[0]), 8),
+        "threshold":     round(optimal_threshold, 4),
         "feature_names": feature_names,
         "feature_mins":  feature_mins,
         "feature_maxs":  feature_maxs,

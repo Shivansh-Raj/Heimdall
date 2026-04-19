@@ -55,8 +55,18 @@ def decrypt_value(private_key: paillier.PaillierPrivateKey, enc_dict: dict) -> f
 
 
 def reconstruct_encrypted_number(public_key, enc_dict: dict):
-    return paillier.EncryptedNumber(
+    """
+    Reconstruct EncryptedNumber from JS-generated ciphertext.
+    
+    Python phe stores ciphertexts differently from raw Paillier.
+    We must set decrease_exponent_to=None to prevent phe from
+    re-encoding the ciphertext internally.
+    """
+    enc = paillier.EncryptedNumber(
         public_key,
         int(enc_dict["ciphertext"]),
-        int(enc_dict["exponent"])  
+        int(enc_dict["exponent"])
     )
+    # Prevent phe from touching the exponent during arithmetic
+    enc.decrease_exponent_to = lambda x: None
+    return enc

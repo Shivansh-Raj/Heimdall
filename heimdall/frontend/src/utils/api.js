@@ -55,3 +55,30 @@ export async function healthCheck() {
   const { data } = await api.get('/');
   return data;
 }
+
+export async function keygen() {
+  const { data } = await api.post('/api/keygen');
+  return data;  // { session_id, public_key_n }
+}
+
+export async function decryptResult(sessionId, modelId, encryptedResult) {
+  try {
+    const { data } = await api.post('/api/decrypt-result', {
+      session_id: sessionId,
+      model_id: modelId,       // ADD THIS
+      encrypted_result: encryptedResult,
+    });
+    return data;
+  } catch (err) {
+    if (err.response?.status === 404) throw new Error('SESSION_EXPIRED');
+    throw err;
+  }
+}
+
+export async function predictPlaintext(modelId, normalizedFeatures) {
+  const { data } = await api.post('/api/predict-plaintext', {
+    model_id: modelId,
+    features: normalizedFeatures,
+  });
+  return data;
+}
